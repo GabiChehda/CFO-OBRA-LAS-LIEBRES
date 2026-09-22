@@ -25,6 +25,24 @@ export const metadata: Metadata = {
   description: "Control financiero de la obra Las Liebres",
 };
 
+// Los errores de supabase-js (PostgrestError) son objetos planos
+// ({message, code, details, hint}), no instancias de Error — con sólo
+// `err.message` se pierden. Esto arma un mensaje legible con lo que haya.
+function describeSetupError(err: unknown): string {
+  if (err && typeof err === "object") {
+    const e = err as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown };
+    const parts = [
+      typeof e.message === "string" && e.message,
+      typeof e.code === "string" && e.code && `código: ${e.code}`,
+      typeof e.details === "string" && e.details && `detalle: ${e.details}`,
+      typeof e.hint === "string" && e.hint && `sugerencia: ${e.hint}`,
+    ].filter((p): p is string => Boolean(p));
+    if (parts.length > 0) return parts.join(" — ");
+  }
+  if (err instanceof Error) return err.message;
+  return `Error no identificado: ${String(err)}`;
+}
+
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   let quickAddProps: {
     categories: { id: string; name: string; parent_id: string | null }[];
@@ -35,6 +53,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     defaultFxRate: number;
   } | null = null;
   let setupError: string | null = null;
+  let setupDiagnostics: string | null = null;
 
   try {
     const data = await loadProjectData();
@@ -54,7 +73,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       defaultFxRate: data.project.current_fx_rate,
     };
   } catch (err) {
-    setupError = err instanceof Error ? err.message : "No se pudo conectar con la base de datos.";
+    setupError = describeSetupError(err);
+    // Diagnóstico temporal (sección "Revisemos deploy en Netlify"): sólo dice
+    // si las env vars llegaron al runtime, nunca su valor.
+    setupDiagnostics = `NEXT_PUBLIC_SUPABASE_URL: ${process.env.NEXT_PUBLIC_SUPABASE_URL ? "detectada" : "AUSENTE"} · NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ? "detectada" : "AUSENTE"
+    }`;
   }
 
   return (
@@ -65,6 +89,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <div className="max-w-md rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
               <p className="mb-2 font-semibold">Obra Las Liebres todavía no está lista</p>
               <p>{setupError}</p>
+              {setupDiagnostics && <p className="mt-3 text-xs text-amber-700">{setupDiagnostics}</p>}
             </div>
           </main>
         ) : (
