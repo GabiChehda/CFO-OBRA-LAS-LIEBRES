@@ -5,6 +5,11 @@ import { Sidebar, MobileNav } from "@/components/Sidebar";
 import { NuevoPagoButton } from "@/components/NuevoPagoButton";
 import { loadProjectData } from "@/lib/data";
 
+// Toda la app lee datos en vivo de Supabase (presupuesto, pagos, fondeo) — sin
+// esto, `next build` prerenderiza páginas como contenido estático y quedan
+// congeladas con los datos del momento del build hasta el próximo deploy.
+export const dynamic = "force-dynamic";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],

@@ -1,0 +1,8 @@
+# Netlify detecta Next.js automáticamente y maneja el plugin @netlify/plugin-nextjs
+# por su cuenta — no hace falta declararlo a mano. Esto sólo fija el comando de
+# build y la versión de Node para que el build sea reproducible.
+[build]
+  command = "npm run build"
+
+[build.environment]
+  NODE_VERSION = "20"

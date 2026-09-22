@@ -1,4 +1,4 @@
-import type { Category, Commitment, CommitmentInstallment } from "@/lib/database.types";
+import type { Category, Commitment, CommitmentInstallment, FundingSource } from "@/lib/database.types";
 import type { CategoryFinancials } from "./categories";
 import type { CashFlowRow } from "./cashflow";
 
@@ -6,7 +6,8 @@ export type AlertType =
   | "presupuesto_excedido"
   | "proximo_pago"
   | "falta_fondeo"
-  | "contrato_sin_calendario";
+  | "contrato_sin_calendario"
+  | "confirmado_sin_fecha";
 
 export interface Alert {
   type: AlertType;
@@ -23,9 +24,10 @@ export function computeAlerts(params: {
   commitments: Commitment[];
   installmentsByCommitmentId: Map<string, CommitmentInstallment[]>;
   cashFlow: CashFlowRow[];
+  fundingSources?: FundingSource[];
   today?: Date;
 }): Alert[] {
-  const { categories, financialsByCategory, commitments, installmentsByCommitmentId, cashFlow } = params;
+  const { categories, financialsByCategory, commitments, installmentsByCommitmentId, cashFlow, fundingSources } = params;
   const today = params.today ?? new Date();
   const alerts: Alert[] = [];
 
@@ -73,6 +75,18 @@ export function computeAlerts(params: {
         severity: "warning",
         message: `${commitment.description} no tiene cuotas/fechas de pago cargadas`,
         href: "/compromisos",
+      });
+    }
+  }
+
+  for (const source of fundingSources ?? []) {
+    if (source.deleted_at || source.status !== "confirmado_futuro") continue;
+    if (!source.available_date) {
+      alerts.push({
+        type: "confirmado_sin_fecha",
+        severity: "warning",
+        message: `${source.name}: confirmado pero sin fecha estimada — no entra en la curva de caja mensual todavía`,
+        href: "/fondos",
       });
     }
   }

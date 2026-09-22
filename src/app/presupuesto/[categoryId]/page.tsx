@@ -91,20 +91,21 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
       </div>
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <KpiCard label="Presupuesto" value={formatUsd(f.budgetUsd)} />
-        <KpiCard label="Comprometido" value={formatUsd(f.committedUsd)} />
+        <KpiCard label="Presupuesto original" value={formatUsd(f.budgetUsd)} />
+        <KpiCard label="Comprometido total" value={formatUsd(f.committedUsd)} />
         <KpiCard label="Pagado" value={formatUsd(f.paidUsd)} />
         <KpiCard
-          label="Estimado final"
+          label="Estimado final (EAC)"
           value={formatUsd(f.eacUsd)}
           sublabel={f.eacIsOverride ? "Override manual" : "Calculado automáticamente"}
         />
       </section>
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-2">
-        <KpiCard label="Saldo por pagar" value={formatUsd(f.pendingBalanceUsd)} />
+      <section className="grid grid-cols-3 gap-3">
+        <KpiCard label="Comprometido pendiente" value={formatUsd(f.pendingBalanceUsd)} />
+        <KpiCard label="Pendiente de ejecutar" value={formatUsd(f.remainingToExecuteUsd)} />
         <KpiCard
-          label="Desvío"
+          label="Desvío vs. presupuesto"
           value={formatUsd(f.deviationUsd)}
           sublabel={f.deviationPct !== null ? formatPct(f.deviationPct) : undefined}
           tone={f.deviationUsd > 0 ? "negative" : "positive"}

@@ -7,7 +7,7 @@ import type {
 } from "@/lib/database.types";
 import { toUsd } from "./currency";
 
-export type Semaforo = "green" | "yellow" | "red";
+export type Semaforo = "green" | "yellow" | "red" | "none";
 
 export interface CategoryFinancials {
   categoryId: string;
@@ -20,6 +20,8 @@ export interface CategoryFinancials {
   pendingBalanceUsd: number;
   eacUsd: number;
   eacIsOverride: boolean;
+  /** EAC - Pagado: lo que falta ejecutar del estimado final, con o sin compromiso. */
+  remainingToExecuteUsd: number;
   deviationUsd: number;
   deviationPct: number | null;
   status: Semaforo;
@@ -49,9 +51,21 @@ export function getSelfAndDescendantIds(
   return ids;
 }
 
-function getSemaforo(deviationPct: number | null, thresholdPct: number): Semaforo {
-  if (deviationPct === null || deviationPct <= 0) return "green";
-  if (deviationPct * 100 <= thresholdPct) return "yellow";
+/** Semáforo (sección 5), con un cuarto estado "none" para rubros sin
+ * presupuesto ni ningún movimiento — no son un desvío, son un rubro que
+ * todavía no arrancó, y no deberían leerse como "En línea" (verde). */
+function getStatus(
+  budgetUsd: number,
+  committedUsd: number,
+  paidUsd: number,
+  eacUsd: number,
+  deviationPct: number | null,
+  thresholdPct: number
+): Semaforo {
+  if (budgetUsd === 0 && committedUsd === 0 && paidUsd === 0) return "none";
+  if (eacUsd <= budgetUsd) return "green"; // EAC nunca es menor al presupuesto salvo override manual
+  if (budgetUsd === 0) return "red"; // hay gasto/compromiso sin ningún presupuesto asignado
+  if (deviationPct !== null && deviationPct * 100 <= thresholdPct) return "yellow";
   return "red";
 }
 
@@ -94,11 +108,9 @@ export function computeAllCategoryFinancials(
     const categoryCommitments = activeCommitments.filter((c) => ids.has(c.category_id));
     const categoryPayments = activePayments.filter((p) => ids.has(p.category_id));
 
-    const budgetUsd = ids.has(category.id)
-      ? categories
-          .filter((c) => ids.has(c.id))
-          .reduce((sum, c) => sum + toUsd(c.budget_amount, c.budget_currency, refFxRate), 0)
-      : 0;
+    const budgetUsd = categories
+      .filter((c) => ids.has(c.id))
+      .reduce((sum, c) => sum + toUsd(c.budget_amount, c.budget_currency, refFxRate), 0);
 
     const committedUsd = categoryCommitments.reduce(
       (sum, c) => sum + toUsd(c.total_amount, c.currency, refFxRate),
@@ -118,13 +130,17 @@ export function computeAllCategoryFinancials(
       if (!hasSchedule && c.total_amount - c.advance_amount > 0) hasCommitmentWithoutSchedule = true;
     }
 
-    const uncommittedBudget = Math.max(budgetUsd - committedUsd, 0);
+    // Presupuesto y pagos son dimensiones distintas (punto 1): un pago dentro
+    // de lo presupuestado no debe inflar el EAC. El EAC sólo sube por encima
+    // del presupuesto vigente cuando lo realmente comprometido+pagado lo
+    // supera — nunca por sumar el pago "arriba" del presupuesto restante.
     const override = categories.find((c) => c.id === category.id)?.estimated_final_amount_override;
-    const autoEac = paidUsd + pendingBalanceUsd + uncommittedBudget;
+    const autoEac = Math.max(budgetUsd, paidUsd + pendingBalanceUsd);
     const eacUsd = override ?? autoEac;
+    const remainingToExecuteUsd = eacUsd - paidUsd;
 
     const deviationUsd = eacUsd - budgetUsd;
-    const deviationPct = budgetUsd > 0 ? deviationUsd / budgetUsd : eacUsd > 0 ? 1 : null;
+    const deviationPct = budgetUsd > 0 ? deviationUsd / budgetUsd : null;
 
     result.set(category.id, {
       categoryId: category.id,
@@ -135,9 +151,10 @@ export function computeAllCategoryFinancials(
       pendingBalanceUsd,
       eacUsd,
       eacIsOverride: override != null,
+      remainingToExecuteUsd,
       deviationUsd,
       deviationPct,
-      status: getSemaforo(deviationPct, project.deviation_alert_threshold_pct),
+      status: getStatus(budgetUsd, committedUsd, paidUsd, eacUsd, deviationPct, project.deviation_alert_threshold_pct),
       hasCommitmentWithoutSchedule,
     });
   }
@@ -151,6 +168,7 @@ export interface ProjectSummary {
   committedUsd: number;
   paidUsd: number;
   pendingBalanceUsd: number;
+  remainingToExecuteUsd: number;
   deviationUsd: number;
   deviationPct: number | null;
 }
@@ -175,5 +193,6 @@ export function computeProjectSummary(
   );
   const deviationUsd = totals.eacUsd - totals.budgetUsd;
   const deviationPct = totals.budgetUsd > 0 ? deviationUsd / totals.budgetUsd : null;
-  return { ...totals, deviationUsd, deviationPct };
+  const remainingToExecuteUsd = totals.eacUsd - totals.paidUsd;
+  return { ...totals, remainingToExecuteUsd, deviationUsd, deviationPct };
 }
