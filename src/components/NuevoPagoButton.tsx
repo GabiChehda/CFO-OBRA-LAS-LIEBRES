@@ -1,47 +1,28 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { createPayment } from "@/lib/actions/payments";
+import { createPayment, updatePayment, type CreatePaymentInput } from "@/lib/actions/payments";
+import { createSupplier } from "@/app/proveedores/actions";
+import type { PaymentFormOptions } from "@/lib/paymentFormOptions";
 import type { CurrencyCode, PaymentMethod, PaymentType } from "@/lib/database.types";
 
-interface CategoryOption {
-  id: string;
-  name: string;
-  parent_id: string | null;
-}
+const NEW_SUPPLIER = "__new__";
 
-interface SupplierOption {
+export interface PaymentRecord {
   id: string;
-  name: string;
-}
-
-interface CommitmentOption {
-  id: string;
+  date: string;
+  categoryId: string;
+  supplierId: string | null;
   description: string;
-  supplier_id: string;
-  category_id: string;
-  currency: CurrencyCode;
-}
-
-interface InstallmentOption {
-  id: string;
-  due_date: string;
   amount: number;
-  status: "pending" | "paid";
-}
-
-interface FundingSourceOption {
-  id: string;
-  name: string;
-}
-
-export interface NuevoPagoButtonProps {
-  categories: CategoryOption[];
-  suppliers: SupplierOption[];
-  commitments: CommitmentOption[];
-  installmentsByCommitment: Record<string, InstallmentOption[]>;
-  fundingSources: FundingSourceOption[];
-  defaultFxRate: number;
+  currency: CurrencyCode;
+  fxRate: number;
+  paymentMethod: PaymentMethod;
+  paymentType: PaymentType;
+  commitmentId: string | null;
+  commitmentInstallmentId: string | null;
+  fundingSourceId: string | null;
+  notes: string | null;
 }
 
 const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
@@ -68,7 +49,7 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function NuevoPagoButton(props: NuevoPagoButtonProps) {
+export function NuevoPagoButton(props: PaymentFormOptions) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -79,43 +60,78 @@ export function NuevoPagoButton(props: NuevoPagoButtonProps) {
       >
         + Nuevo pago
       </button>
-      {open && <NuevoPagoModal {...props} onClose={() => setOpen(false)} />}
+      {open && <PagoModal {...props} mode="create" onClose={() => setOpen(false)} />}
     </>
   );
 }
 
-function NuevoPagoModal(props: NuevoPagoButtonProps & { onClose: () => void }) {
-  const { categories, suppliers, commitments, installmentsByCommitment, fundingSources, defaultFxRate, onClose } =
+export function EditPagoButton(props: PaymentFormOptions & { payment: PaymentRecord }) {
+  const [open, setOpen] = useState(false);
+  const { payment, ...options } = props;
+
+  return (
+    <>
+      <button onClick={() => setOpen(true)} className="text-xs text-slate-400 hover:text-slate-700">
+        Editar
+      </button>
+      {open && <PagoModal {...options} mode="edit" initial={payment} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function PagoModal(
+  props: PaymentFormOptions & { onClose: () => void } & (
+      | { mode: "create"; initial?: undefined }
+      | { mode: "edit"; initial: PaymentRecord }
+    )
+) {
+  const { categories, suppliers, commitments, installmentsByCommitment, fundingSources, defaultFxRate, onClose, mode, initial } =
     props;
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   const rubros = useMemo(() => categories.filter((c) => c.parent_id === null), [categories]);
-  const [rubroId, setRubroId] = useState(rubros[0]?.id ?? "");
-  const subrubros = useMemo(() => categories.filter((c) => c.parent_id === rubroId), [categories, rubroId]);
-  const [subrubroId, setSubrubroId] = useState("");
+  const initialRubro = useMemo(() => {
+    if (!initial) return rubros[0]?.id ?? "";
+    const own = categories.find((c) => c.id === initial.categoryId);
+    return own?.parent_id ?? initial.categoryId;
+  }, [initial, categories, rubros]);
+  const initialSubrubro = useMemo(() => {
+    if (!initial) return "";
+    const own = categories.find((c) => c.id === initial.categoryId);
+    return own?.parent_id ? initial.categoryId : "";
+  }, [initial, categories]);
 
-  const [supplierId, setSupplierId] = useState("");
-  const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState<CurrencyCode>("USD");
-  const [fxRate, setFxRate] = useState(String(defaultFxRate));
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("transferencia_usd");
-  const [paymentType, setPaymentType] = useState<PaymentType>("pago_parcial");
-  const [commitmentId, setCommitmentId] = useState("");
-  const [installmentId, setInstallmentId] = useState("");
-  const [fundingSourceId, setFundingSourceId] = useState("");
-  const [notes, setNotes] = useState("");
-  const [date, setDate] = useState(todayIso());
+  const [rubroId, setRubroId] = useState(initialRubro);
+  const subrubros = useMemo(() => categories.filter((c) => c.parent_id === rubroId), [categories, rubroId]);
+  const [subrubroId, setSubrubroId] = useState(initialSubrubro);
+
+  const [supplierId, setSupplierId] = useState(initial?.supplierId ?? "");
+  const [newSupplierName, setNewSupplierName] = useState("");
+  const [newSupplierCurrency, setNewSupplierCurrency] = useState<CurrencyCode>("USD");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [amount, setAmount] = useState(initial ? String(initial.amount) : "");
+  const [currency, setCurrency] = useState<CurrencyCode>(initial?.currency ?? "USD");
+  const [fxRate, setFxRate] = useState(String(initial?.fxRate ?? defaultFxRate));
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(initial?.paymentMethod ?? "transferencia_usd");
+  const [paymentType, setPaymentType] = useState<PaymentType>(initial?.paymentType ?? "pago_parcial");
+  const [commitmentId, setCommitmentId] = useState(initial?.commitmentId ?? "");
+  const [installmentId, setInstallmentId] = useState(initial?.commitmentInstallmentId ?? "");
+  const [fundingSourceId, setFundingSourceId] = useState(initial?.fundingSourceId ?? "");
+  const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [date, setDate] = useState(initial?.date ?? todayIso());
 
   const supplierCommitments = useMemo(
-    () => commitments.filter((c) => !supplierId || c.supplier_id === supplierId),
+    () => commitments.filter((c) => !supplierId || supplierId === NEW_SUPPLIER || c.supplier_id === supplierId),
     [commitments, supplierId]
   );
-  const pendingInstallments = useMemo(
-    () => (installmentsByCommitment[commitmentId] ?? []).filter((i) => i.status === "pending"),
-    [installmentsByCommitment, commitmentId]
-  );
+  const pendingInstallments = useMemo(() => {
+    const list = installmentsByCommitment[commitmentId] ?? [];
+    // La cuota que este pago ya saldó queda marcada "paid" — igual debe
+    // seguir apareciendo en el combo al editar, si no, la selección actual
+    // desaparece de las opciones.
+    return list.filter((i) => i.status === "pending" || i.id === initial?.commitmentInstallmentId);
+  }, [installmentsByCommitment, commitmentId, initial]);
 
   const categoryId = subrubroId || rubroId;
 
@@ -128,12 +144,23 @@ function NuevoPagoModal(props: NuevoPagoButtonProps & { onClose: () => void }) {
       setError("Completá rubro, concepto, importe y tipo de cambio.");
       return;
     }
+    if (supplierId === NEW_SUPPLIER && !newSupplierName.trim()) {
+      setError("Ingresá el nombre del nuevo proveedor.");
+      return;
+    }
+
     startTransition(async () => {
       try {
-        await createPayment({
+        let finalSupplierId: string | null = supplierId || null;
+        if (supplierId === NEW_SUPPLIER) {
+          const created = await createSupplier({ name: newSupplierName.trim(), usualCurrency: newSupplierCurrency });
+          finalSupplierId = created.id;
+        }
+
+        const payload: CreatePaymentInput = {
           date,
           categoryId,
-          supplierId: supplierId || null,
+          supplierId: finalSupplierId,
           description: description.trim(),
           amount: amountNumber,
           currency,
@@ -144,7 +171,13 @@ function NuevoPagoModal(props: NuevoPagoButtonProps & { onClose: () => void }) {
           commitmentInstallmentId: installmentId || null,
           fundingSourceId: fundingSourceId || null,
           notes: notes.trim() || null,
-        });
+        };
+
+        if (mode === "edit") {
+          await updatePayment(initial.id, payload);
+        } else {
+          await createPayment(payload);
+        }
         onClose();
       } catch (err) {
         setError(err instanceof Error ? err.message : "No se pudo guardar el pago.");
@@ -156,7 +189,7 @@ function NuevoPagoModal(props: NuevoPagoButtonProps & { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 md:items-center">
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl md:rounded-2xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-900">Nuevo pago</h2>
+          <h2 className="text-base font-semibold text-slate-900">{mode === "edit" ? "Editar pago" : "Nuevo pago"}</h2>
           <button onClick={onClose} className="text-sm text-slate-400 hover:text-slate-600">
             Cerrar
           </button>
@@ -264,6 +297,7 @@ function NuevoPagoModal(props: NuevoPagoButtonProps & { onClose: () => void }) {
               className="input"
             >
               <option value="">Sin proveedor</option>
+              <option value={NEW_SUPPLIER}>+ Nuevo proveedor...</option>
               {suppliers.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -271,6 +305,31 @@ function NuevoPagoModal(props: NuevoPagoButtonProps & { onClose: () => void }) {
               ))}
             </select>
           </Field>
+
+          {supplierId === NEW_SUPPLIER && (
+            <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3">
+              <Field label="Nombre del proveedor">
+                <input
+                  type="text"
+                  value={newSupplierName}
+                  onChange={(e) => setNewSupplierName(e.target.value)}
+                  className="input"
+                  placeholder="Ej: Carpintería Pérez"
+                  required
+                />
+              </Field>
+              <Field label="Moneda habitual">
+                <select
+                  value={newSupplierCurrency}
+                  onChange={(e) => setNewSupplierCurrency(e.target.value as CurrencyCode)}
+                  className="input"
+                >
+                  <option value="USD">USD</option>
+                  <option value="ARS">ARS</option>
+                </select>
+              </Field>
+            </div>
+          )}
 
           {supplierCommitments.length > 0 && (
             <Field label="Asociar a compromiso (opcional)">
@@ -352,7 +411,7 @@ function NuevoPagoModal(props: NuevoPagoButtonProps & { onClose: () => void }) {
             disabled={isPending}
             className="w-full rounded-lg bg-slate-900 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
           >
-            {isPending ? "Guardando..." : "Guardar pago"}
+            {isPending ? "Guardando..." : mode === "edit" ? "Guardar cambios" : "Guardar pago"}
           </button>
         </form>
       </div>

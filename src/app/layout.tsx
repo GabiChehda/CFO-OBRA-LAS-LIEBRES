@@ -4,6 +4,7 @@ import "./globals.css";
 import { Sidebar, MobileNav } from "@/components/Sidebar";
 import { NuevoPagoButton } from "@/components/NuevoPagoButton";
 import { loadProjectData } from "@/lib/data";
+import { buildPaymentFormOptions, type PaymentFormOptions } from "@/lib/paymentFormOptions";
 
 // Toda la app lee datos en vivo de Supabase (presupuesto, pagos, fondeo) — sin
 // esto, `next build` prerenderiza páginas como contenido estático y quedan
@@ -44,34 +45,13 @@ function describeSetupError(err: unknown): string {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  let quickAddProps: {
-    categories: { id: string; name: string; parent_id: string | null }[];
-    suppliers: { id: string; name: string }[];
-    commitments: { id: string; description: string; supplier_id: string; category_id: string; currency: "ARS" | "USD" }[];
-    installmentsByCommitment: Record<string, { id: string; due_date: string; amount: number; status: "pending" | "paid" }[]>;
-    fundingSources: { id: string; name: string }[];
-    defaultFxRate: number;
-  } | null = null;
+  let quickAddProps: PaymentFormOptions | null = null;
   let setupError: string | null = null;
   let setupDiagnostics: string | null = null;
 
   try {
     const data = await loadProjectData();
-    quickAddProps = {
-      categories: data.categories.map((c) => ({ id: c.id, name: c.name, parent_id: c.parent_id })),
-      suppliers: data.suppliers.map((s) => ({ id: s.id, name: s.name })),
-      commitments: data.commitments
-        .filter((c) => c.status === "active" && !c.deleted_at)
-        .map((c) => ({ id: c.id, description: c.description, supplier_id: c.supplier_id, category_id: c.category_id, currency: c.currency })),
-      installmentsByCommitment: Object.fromEntries(
-        [...data.installmentsByCommitmentId.entries()].map(([id, list]) => [
-          id,
-          list.map((i) => ({ id: i.id, due_date: i.due_date, amount: i.amount, status: i.status })),
-        ])
-      ),
-      fundingSources: data.fundingSources.map((f) => ({ id: f.id, name: f.name })),
-      defaultFxRate: data.project.current_fx_rate,
-    };
+    quickAddProps = buildPaymentFormOptions(data);
   } catch (err) {
     setupError = describeSetupError(err);
     // Diagnóstico temporal (sección "Revisemos deploy en Netlify"): sólo dice

@@ -1,4 +1,5 @@
 import { loadProjectData } from "@/lib/data";
+import { buildPaymentFormOptions } from "@/lib/paymentFormOptions";
 import { MovimientosTable } from "./MovimientosTable";
 
 export default async function MovimientosPage() {
@@ -29,6 +30,7 @@ export default async function MovimientosPage() {
         categories={data.categories.map((c) => ({ id: c.id, name: categoryLabel.get(c.id) ?? c.name }))}
         suppliers={data.suppliers.map((s) => ({ id: s.id, name: s.name }))}
         fundingSources={data.fundingSources.map((f) => ({ id: f.id, name: f.name }))}
+        formOptions={buildPaymentFormOptions(data)}
       />
     </div>
   );

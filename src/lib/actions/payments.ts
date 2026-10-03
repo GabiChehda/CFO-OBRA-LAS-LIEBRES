@@ -85,6 +85,105 @@ export async function createPayment(input: CreatePaymentInput) {
   return payment;
 }
 
+/** Edita un pago ya cargado. A diferencia de crear, acá hay que revertir
+ * primero los efectos secundarios del pago viejo (cuota que saldaba, monto
+ * usado de su fuente de fondos) antes de aplicar los nuevos — si no, un pago
+ * reasignado a otra cuota/fuente dejaría basura en la anterior. */
+export async function updatePayment(paymentId: string, input: CreatePaymentInput) {
+  const supabase = getSupabaseClient();
+
+  const { data: existing, error: fetchError } = await supabase
+    .from("payments")
+    .select("*")
+    .eq("id", paymentId)
+    .single();
+  if (fetchError) throw fetchError;
+  if (!existing) throw new Error("Pago no encontrado.");
+
+  const amount_usd = toUsd(input.amount, input.currency, input.fxRate);
+  const amount_ars = toArs(input.amount, input.currency, input.fxRate);
+
+  if (existing.commitment_installment_id && existing.commitment_installment_id !== input.commitmentInstallmentId) {
+    const { error } = await supabase
+      .from("commitment_installments")
+      .update({ status: "pending", updated_at: new Date().toISOString() })
+      .eq("id", existing.commitment_installment_id);
+    if (error) throw error;
+  }
+  if (input.commitmentInstallmentId && input.commitmentInstallmentId !== existing.commitment_installment_id) {
+    const { error } = await supabase
+      .from("commitment_installments")
+      .update({ status: "paid", updated_at: new Date().toISOString() })
+      .eq("id", input.commitmentInstallmentId);
+    if (error) throw error;
+  }
+
+  if (existing.funding_source_id) {
+    const { data: oldSource, error } = await supabase
+      .from("funding_sources")
+      .select("*")
+      .eq("id", existing.funding_source_id)
+      .single();
+    if (error) throw error;
+    if (oldSource) {
+      const oldDelta =
+        oldSource.currency === existing.currency
+          ? existing.amount
+          : oldSource.currency === "USD"
+            ? existing.amount_usd
+            : existing.amount_ars;
+      const { error: updErr } = await supabase
+        .from("funding_sources")
+        .update({ used_amount: oldSource.used_amount - oldDelta, updated_at: new Date().toISOString() })
+        .eq("id", oldSource.id);
+      if (updErr) throw updErr;
+    }
+  }
+
+  if (input.fundingSourceId) {
+    const { data: newSource, error } = await supabase
+      .from("funding_sources")
+      .select("*")
+      .eq("id", input.fundingSourceId)
+      .single();
+    if (error) throw error;
+    if (newSource) {
+      const newDelta =
+        newSource.currency === input.currency ? input.amount : newSource.currency === "USD" ? amount_usd : amount_ars;
+      const { error: updErr } = await supabase
+        .from("funding_sources")
+        .update({ used_amount: newSource.used_amount + newDelta, updated_at: new Date().toISOString() })
+        .eq("id", newSource.id);
+      if (updErr) throw updErr;
+    }
+  }
+
+  const { error: updateError } = await supabase
+    .from("payments")
+    .update({
+      date: input.date,
+      category_id: input.categoryId,
+      supplier_id: input.supplierId ?? null,
+      commitment_id: input.commitmentId ?? null,
+      commitment_installment_id: input.commitmentInstallmentId ?? null,
+      funding_source_id: input.fundingSourceId ?? null,
+      description: input.description,
+      currency: input.currency,
+      amount: input.amount,
+      fx_rate: input.fxRate,
+      amount_usd,
+      amount_ars,
+      payment_method: input.paymentMethod,
+      payment_type: input.paymentType,
+      notes: input.notes ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", paymentId);
+  if (updateError) throw updateError;
+
+  revalidatePath("/", "layout");
+}
+
 export async function deletePayment(paymentId: string) {
   const supabase = getSupabaseClient();
   const { error } = await supabase

@@ -2,7 +2,9 @@
 
 import { useTransition } from "react";
 import { deletePayment } from "@/lib/actions/payments";
+import { EditPagoButton } from "@/components/NuevoPagoButton";
 import { formatAmount, formatDate } from "@/lib/finance";
+import type { PaymentFormOptions } from "@/lib/paymentFormOptions";
 import type { CurrencyCode, PaymentMethod, PaymentType } from "@/lib/database.types";
 
 const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
@@ -28,16 +30,23 @@ const PAYMENT_TYPE_LABELS: Record<PaymentType, string> = {
 export interface PagoRow {
   id: string;
   date: string;
-  description: string;
+  categoryId: string;
   categoryName: string;
+  supplierId: string | null;
   supplierName: string;
+  description: string;
   amount: number;
   currency: CurrencyCode;
+  fxRate: number;
   paymentMethod: PaymentMethod;
   paymentType: PaymentType;
+  commitmentId: string | null;
+  commitmentInstallmentId: string | null;
+  fundingSourceId: string | null;
+  notes: string | null;
 }
 
-export function PagosTable({ rows }: { rows: PagoRow[] }) {
+export function PagosTable({ rows, formOptions }: { rows: PagoRow[]; formOptions: PaymentFormOptions }) {
   const [isPending, startTransition] = useTransition();
 
   function handleDelete(id: string) {
@@ -49,7 +58,7 @@ export function PagosTable({ rows }: { rows: PagoRow[] }) {
 
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-      <table className="w-full min-w-[760px] text-sm">
+      <table className="w-full min-w-[820px] text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-left text-xs font-medium text-slate-500">
             <th className="px-4 py-3">Fecha</th>
@@ -82,14 +91,35 @@ export function PagosTable({ rows }: { rows: PagoRow[] }) {
                   {PAYMENT_METHOD_LABELS[row.paymentMethod]}
                   <span className="block text-[11px] text-slate-400">{PAYMENT_TYPE_LABELS[row.paymentType]}</span>
                 </td>
-                <td className="px-4 py-2.5 text-right">
-                  <button
-                    onClick={() => handleDelete(row.id)}
-                    disabled={isPending}
-                    className="text-xs text-slate-400 hover:text-red-600 disabled:opacity-50"
-                  >
-                    Eliminar
-                  </button>
+                <td className="px-4 py-2.5">
+                  <div className="flex items-center justify-end gap-3">
+                    <EditPagoButton
+                      {...formOptions}
+                      payment={{
+                        id: row.id,
+                        date: row.date,
+                        categoryId: row.categoryId,
+                        supplierId: row.supplierId,
+                        description: row.description,
+                        amount: row.amount,
+                        currency: row.currency,
+                        fxRate: row.fxRate,
+                        paymentMethod: row.paymentMethod,
+                        paymentType: row.paymentType,
+                        commitmentId: row.commitmentId,
+                        commitmentInstallmentId: row.commitmentInstallmentId,
+                        fundingSourceId: row.fundingSourceId,
+                        notes: row.notes,
+                      }}
+                    />
+                    <button
+                      onClick={() => handleDelete(row.id)}
+                      disabled={isPending}
+                      className="text-xs text-slate-400 hover:text-red-600 disabled:opacity-50"
+                    >
+                      Eliminar
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))

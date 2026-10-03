@@ -2,7 +2,9 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { deletePayment } from "@/lib/actions/payments";
+import { EditPagoButton } from "@/components/NuevoPagoButton";
 import { formatAmount, formatDate, formatUsd } from "@/lib/finance";
+import type { PaymentFormOptions } from "@/lib/paymentFormOptions";
 import type { CurrencyCode, Payment, PaymentMethod, PaymentType } from "@/lib/database.types";
 
 interface Option {
@@ -15,6 +17,7 @@ export interface MovimientosTableProps {
   categories: Option[];
   suppliers: Option[];
   fundingSources: Option[];
+  formOptions: PaymentFormOptions;
 }
 
 const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
@@ -44,7 +47,7 @@ function csvEscape(value: string): string {
   return value;
 }
 
-export function MovimientosTable({ payments, categories, suppliers, fundingSources }: MovimientosTableProps) {
+export function MovimientosTable({ payments, categories, suppliers, fundingSources, formOptions }: MovimientosTableProps) {
   const categoryName = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories]);
   const supplierName = useMemo(() => new Map(suppliers.map((s) => [s.id, s.name])), [suppliers]);
   const fundingSourceName = useMemo(() => new Map(fundingSources.map((f) => [f.id, f.name])), [fundingSources]);
@@ -240,13 +243,34 @@ export function MovimientosTable({ payments, categories, suppliers, fundingSourc
                   {p.funding_source_id ? fundingSourceName.get(p.funding_source_id) ?? "—" : "—"}
                 </td>
                 <td className="px-4 py-2.5 text-right">
-                  <button
-                    onClick={() => handleDelete(p.id)}
-                    disabled={isPending && deletingId === p.id}
-                    className="text-sm text-slate-500 hover:text-red-600 disabled:opacity-50"
-                  >
-                    {isPending && deletingId === p.id ? "Eliminando..." : "Eliminar"}
-                  </button>
+                  <div className="flex items-center justify-end gap-3">
+                    <EditPagoButton
+                      {...formOptions}
+                      payment={{
+                        id: p.id,
+                        date: p.date,
+                        categoryId: p.category_id,
+                        supplierId: p.supplier_id,
+                        description: p.description,
+                        amount: p.amount,
+                        currency: p.currency,
+                        fxRate: p.fx_rate,
+                        paymentMethod: p.payment_method,
+                        paymentType: p.payment_type,
+                        commitmentId: p.commitment_id,
+                        commitmentInstallmentId: p.commitment_installment_id,
+                        fundingSourceId: p.funding_source_id,
+                        notes: p.notes,
+                      }}
+                    />
+                    <button
+                      onClick={() => handleDelete(p.id)}
+                      disabled={isPending && deletingId === p.id}
+                      className="text-sm text-slate-500 hover:text-red-600 disabled:opacity-50"
+                    >
+                      {isPending && deletingId === p.id ? "Eliminando..." : "Eliminar"}
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

@@ -1,4 +1,5 @@
 import { loadProjectData } from "@/lib/data";
+import { buildPaymentFormOptions } from "@/lib/paymentFormOptions";
 import { PagosTable } from "./PagosTable";
 
 export default async function PagosPage() {
@@ -21,13 +22,20 @@ export default async function PagosPage() {
     .map((p) => ({
       id: p.id,
       date: p.date,
-      description: p.description,
+      categoryId: p.category_id,
       categoryName: categoryLabel.get(p.category_id) ?? "—",
+      supplierId: p.supplier_id,
       supplierName: p.supplier_id ? supplierName.get(p.supplier_id) ?? "—" : "—",
+      description: p.description,
       amount: p.amount,
       currency: p.currency,
+      fxRate: p.fx_rate,
       paymentMethod: p.payment_method,
       paymentType: p.payment_type,
+      commitmentId: p.commitment_id,
+      commitmentInstallmentId: p.commitment_installment_id,
+      fundingSourceId: p.funding_source_id,
+      notes: p.notes,
     }));
 
   return (
@@ -39,7 +47,7 @@ export default async function PagosPage() {
         </p>
       </div>
 
-      <PagosTable rows={rows} />
+      <PagosTable rows={rows} formOptions={buildPaymentFormOptions(data)} />
     </div>
   );
 }
